@@ -1,0 +1,13 @@
+{
+    "np_token":{
+        "uid":"uid",
+        "ping_url":"ping_url",
+        "connect_config":[
+            {
+                "proxy":"proxy",
+                "ip":"ip",
+                "user_agent":"user_agent"
+            }
+        ]
+    }
+}

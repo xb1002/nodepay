@@ -1,0 +1,5 @@
+.venv/
+np_token.txt
+proxys.txt
+__pycache__/
+*test*
