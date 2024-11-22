@@ -122,8 +122,9 @@ async def _create_session(session_url, np_token, user_agent, proxy) -> None: # �
                 logger.info(f"Session created for {uid} with proxy {proxy}")
                 return True
     except Exception as e:
-        logger.error(f"Error in create_session: {e} by {np_token[:30]}")
+        logger.error(f"Error in create_session: {e} by {np_token[:30]} with proxy {proxy}")
         retry += 1
+        await asyncio.sleep(random.randint(0, 10)+30)
         return False
 
 async def _ping(ping_url, np_token, user_agent, proxy) -> None: # ping
@@ -140,7 +141,7 @@ async def _ping(ping_url, np_token, user_agent, proxy) -> None: # ping
                 retry = 0
                 return True
     except Exception as e:
-        logger.error(f"Error in ping: {e} by {np_token[:30]}")
+        logger.error(f"Error in ping: {e} by {ACCOUNTS_CONFIG[np_token]['uid']} with proxy {proxy}")
         retry += 1
         return False
 
@@ -154,14 +155,23 @@ async def app(np_token, ping_url, user_agent, proxy) -> None:
                 await asyncio.sleep(get_ping_interval())
                 await _ping(ping_url, np_token, user_agent, proxy)
 
+def assign_proxies_to_single_account(proxies, np_tokens) -> dict[str, list]: # 每个账户分配一批代理
+    # PROXY_NUM_OF_ACCOUNT,
+    proxies_to_single_account = {np_token:[] for np_token in np_tokens}
+    for i in range(PROXY_NUM_OF_ACCOUNT):
+        for j in range(len(np_tokens)):
+            if len(proxies) == 0:
+                return proxies_to_single_account
+            np_token = np_tokens[j]
+            proxies_to_single_account[np_token].append(proxies.pop())
+    return proxies_to_single_account
+            
 async def main():
     proxies = get_proxies()
     np_tokens = get_np_tokens()
-    ########这里需要修改，应该是每个账户使用不同的代理，而不是每个账户使用所有代理####
-    for np_token in np_tokens:
-        ping_url = get_ping_url()
-        set_account_config(np_token, ping_url, proxies)
-    ###########################################################################
+    proxies_to_single_account = assign_proxies_to_single_account(proxies, np_tokens)
+    for np_token,proxies in proxies_to_single_account.items():
+        set_account_config(np_token, get_ping_url(), proxies)
     tasks = []
     for np_token, data in ACCOUNTS_CONFIG.items():
         for single_data in data['connect_config']:
