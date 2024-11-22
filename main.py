@@ -9,6 +9,7 @@ import time
 import asyncio
 from src.config import *
 
+left_proxies = []
 
 def get_user_agent() -> str: # 获取随机的user_agent
     user_agent = fake_useragent.UserAgent()
@@ -110,50 +111,55 @@ def ping_valid_resp(resp_json) -> None: # 如果ping成功，返回None, 否则�
         raise ValueError(f"{resp_json}")
     
 async def _create_session(session_url, np_token, user_agent, proxy) -> None: # 创建session
-    global retry
+    global proxy_retry
     try:
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=True)) as session:
             headers = get_header(np_token, user_agent)
-            async with session.post(session_url, headers=headers, proxy=proxy, data={}, timeout=10) as res:
+            async with session.post(session_url, headers=headers, proxy=proxy, data={}, timeout=TIMEOUT) as res:
                 res.raise_for_status()
                 res_json = await res.json()
                 uid = session_valid_resp(res_json)
                 ACCOUNTS_CONFIG[np_token]['uid'] = uid
                 logger.info(f"Session created for {uid} with proxy {proxy}")
+                proxy_retry[proxy] = 0
                 return True
     except Exception as e:
         logger.error(f"Error in create_session: {e} by {np_token[:30]} with proxy {proxy}")
-        retry += 1
+        proxy_retry[proxy] = proxy_retry.get(proxy, 0) + 1
         await asyncio.sleep(random.randint(0, 10)+30)
         return False
 
 async def _ping(ping_url, np_token, user_agent, proxy) -> None: # ping
-    global retry
+    global proxy_retry
     try:
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=True)) as session:
             headers = get_header(np_token, user_agent)
             data = get_ping_data(ACCOUNTS_CONFIG[np_token]['uid'], get_uuid(), int(time.time()))
-            async with session.post(ping_url, headers=headers, proxy=proxy, json=data, timeout=30) as res:
+            async with session.post(ping_url, headers=headers, proxy=proxy, json=data, timeout=TIMEOUT) as res:
                 res.raise_for_status()
                 res_json = await res.json()
                 ip_score = ping_valid_resp(res_json)
                 logger.info(f"Ping success for {ACCOUNTS_CONFIG[np_token]['uid']} with proxy {proxy}, ip_score: {ip_score}")
-                retry = 0
+                proxy_retry[proxy] = 0
                 return True
     except Exception as e:
         logger.error(f"Error in ping: {e} by {ACCOUNTS_CONFIG[np_token]['uid']} with proxy {proxy}")
-        retry += 1
+        proxy_retry[proxy] = proxy_retry.get(proxy, 0) + 1
         return False
 
 async def app(np_token, ping_url, user_agent, proxy) -> None:
-    while True and retry < MAX_RETRIES:
+    proxy_retry[proxy] = 0
+    while True and proxy_retry[proxy] < MAX_RETRIES:
         if (await _create_session(DOMAIN_API_ENDPOINTS["SESSION"], np_token, user_agent, proxy)):
         # if True:
             await asyncio.sleep(10)
             await _ping(ping_url, np_token, user_agent, proxy)
-            while True and retry < MAX_RETRIES:
+            while True and proxy_retry[proxy] < MAX_RETRIES:
                 await asyncio.sleep(get_ping_interval())
                 await _ping(ping_url, np_token, user_agent, proxy)
+    global left_proxies
+    if len(left_proxies) > 0:
+        await app(np_token, ping_url, user_agent, left_proxies.pop())
 
 def assign_proxies_to_single_account(proxies, np_tokens) -> dict[str, list]: # 每个账户分配一批代理
     # PROXY_NUM_OF_ACCOUNT,
@@ -161,15 +167,16 @@ def assign_proxies_to_single_account(proxies, np_tokens) -> dict[str, list]: # �
     for i in range(PROXY_NUM_OF_ACCOUNT):
         for j in range(len(np_tokens)):
             if len(proxies) == 0:
-                return proxies_to_single_account
+                return proxies_to_single_account, proxies
             np_token = np_tokens[j]
             proxies_to_single_account[np_token].append(proxies.pop())
-    return proxies_to_single_account
+    return proxies_to_single_account, proxies
             
 async def main():
+    global left_proxies
     proxies = get_proxies()
     np_tokens = get_np_tokens()
-    proxies_to_single_account = assign_proxies_to_single_account(proxies, np_tokens)
+    proxies_to_single_account,left_proxies = assign_proxies_to_single_account(proxies, np_tokens)
     for np_token,proxies in proxies_to_single_account.items():
         set_account_config(np_token, get_ping_url(), proxies)
     tasks = []
