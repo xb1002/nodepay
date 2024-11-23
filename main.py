@@ -11,6 +11,8 @@ from src.config import *
 
 total_run = 0
 left_proxies = []
+def error_wait_sleep(proxy):
+    return random.randint(0, 10) + 30 + 1.5 ** proxy_retry[proxy]
 
 def get_user_agent() -> str: # 获取随机的user_agent
     user_agent = fake_useragent.UserAgent()
@@ -127,7 +129,7 @@ async def _create_session(session_url, np_token, user_agent, proxy) -> None: # �
     except Exception as e:
         logger.error(f"Error in create_session: {e} by {np_token[:30]} with proxy {proxy}")
         proxy_retry[proxy] = proxy_retry.get(proxy, 0) + 1
-        await asyncio.sleep(random.randint(0, 10)+30)
+        await asyncio.sleep(error_wait_sleep(proxy))
         return False
 
 async def _ping(ping_url, np_token, user_agent, proxy) -> None: # ping
@@ -146,7 +148,7 @@ async def _ping(ping_url, np_token, user_agent, proxy) -> None: # ping
     except Exception as e:
         logger.error(f"Error in ping: {e} by {ACCOUNTS_CONFIG[np_token]['uid']} with proxy {proxy}")
         proxy_retry[proxy] = proxy_retry.get(proxy, 0) + 1
-        await asyncio.sleep(random.randint(0, 10)+30)
+        await asyncio.sleep(error_wait_sleep(proxy))
         return False
 
 async def app(np_token, ping_url, user_agent, proxy) -> None:
@@ -165,10 +167,10 @@ async def app(np_token, ping_url, user_agent, proxy) -> None:
             while True and proxy_retry[proxy] < MAX_RETRIES:
                 await asyncio.sleep(get_ping_interval())
                 await _ping(ping_url, np_token, user_agent, proxy)
+    total_run -= 1
     global left_proxies
     if len(left_proxies) > 0:
         await app(np_token, ping_url, user_agent, left_proxies.pop())
-    total_run -= 1
 
 async def monitor() -> None:
     while True:
