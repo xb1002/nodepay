@@ -9,6 +9,7 @@ import time
 import asyncio
 from src.config import *
 
+total_run = 0
 left_proxies = []
 
 def get_user_agent() -> str: # 获取随机的user_agent
@@ -145,9 +146,12 @@ async def _ping(ping_url, np_token, user_agent, proxy) -> None: # ping
     except Exception as e:
         logger.error(f"Error in ping: {e} by {ACCOUNTS_CONFIG[np_token]['uid']} with proxy {proxy}")
         proxy_retry[proxy] = proxy_retry.get(proxy, 0) + 1
+        await asyncio.sleep(random.randint(0, 10)+30)
         return False
 
 async def app(np_token, ping_url, user_agent, proxy) -> None:
+    global total_run
+    total_run += 1
     proxy_retry[proxy] = 0
     while True and proxy_retry[proxy] < MAX_RETRIES:
         if (await _create_session(DOMAIN_API_ENDPOINTS["SESSION"], np_token, user_agent, proxy)):
@@ -160,6 +164,14 @@ async def app(np_token, ping_url, user_agent, proxy) -> None:
     global left_proxies
     if len(left_proxies) > 0:
         await app(np_token, ping_url, user_agent, left_proxies.pop())
+    total_run -= 1
+
+async def monitor() -> None:
+    while True:
+        await asyncio.sleep(BASE_PING_INTERVAL)
+        logger.info(f"Total run: {total_run}")
+        logger.info(f"All proxies: {len(get_proxies())}")
+        logger.info(f"Left proxies: {len(left_proxies)}")
 
 def assign_proxies_to_single_account(proxies, np_tokens) -> dict[str, list]: # 每个账户分配一批代理
     # PROXY_NUM_OF_ACCOUNT,
@@ -183,6 +195,7 @@ async def main():
     for np_token, data in ACCOUNTS_CONFIG.items():
         for single_data in data['connect_config']:
             tasks.append(app(np_token, data['ping_url'], single_data['user_agent'], single_data['proxy']))
+    tasks.append(monitor())
     await asyncio.gather(*tasks)
 
 if __name__ == '__main__':
