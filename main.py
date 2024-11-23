@@ -150,6 +150,10 @@ async def _ping(ping_url, np_token, user_agent, proxy) -> None: # ping
         return False
 
 async def app(np_token, ping_url, user_agent, proxy) -> None:
+    # 设置协程开始时间不一样
+    await asyncio.sleep(random.randint(0,60))
+    logger.info(f"Starting app for {np_token} with proxy {proxy}")
+
     global total_run
     total_run += 1
     proxy_retry[proxy] = 0
